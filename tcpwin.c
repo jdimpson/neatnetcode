@@ -9,10 +9,25 @@
 #include <netdb.h>
 
 /******
+ This is sample code for usint TCP_REPAIR_WINOW socket option to peak at the send and receive TCP window sizes of a socket.
+
  TCP_REPAIR_WINDOW can not be used to peak at the state of a socket's TCP Send and Receive windows 
  without the socket first being put into TCP_REPAIR mode. But then if you do anything to the socket with respect 
  to TCP, the TCP protocol engine doesn't get involved, so you need to take it out of TCP_REPAIR mode after getting the
  window states. I wish getsockopt(TCP_REPAIR_WINDOW) didn't require that.
+
+ Can't find a lot of documentation on TCP_REPAIR_WINDOW socket option. Can only find a bit about TCP_REPAIR socket option.
+
+ https://criu.org/TCP_connection talks about TCP_REPAIR, as does https://lwn.net/Articles/495304/ . The former link suggests you can't 
+    leave TCP_REPAIR turned on for a socket that you intend to keep using, because it actually shuts off the TCP protocol.
+
+ https://stackoverflow.com/questions/54070889/how-to-get-the-tcp-window-size-of-a-socket-in-linux/54071393#54071393 suggests using 
+    TCP_REPAIR_WINDOW to get the window sizes, but doesn't mention needing to turn on TCP_REPAIR first (except in a comment I just left).
+
+ https://github.com/YutaroHayakawa/libtcprepair is a little standalone library that does TCP socket freeze/thaw aka checkpoint/restore. 
+    This doesn't help us easily get the window sizes, but I just think it's neat.
+
+ The stack overflow link talks about a TCP_INFO socket option. I should probably make a version of this code that uses that instead.
 
  Note that to go into TCP_REPAIR mode, you need to run as root, under sudo, or (preferably) with the NET_ADMIN capability set.
 
