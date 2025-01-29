@@ -8,26 +8,31 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+/******
+ TCP_REPAIR_WINDOW can not be used to peak at the state of a socket's TCP Send and Receive windows 
+ without the socket first being put into TCP_REPAIR mode. But then if you do anything to the socket with respect 
+ to TCP, the TCP protocol engine doesn't get involved, so you need to take it out of TCP_REPAIR mode after getting the
+ window states. I wish getsockopt(TCP_REPAIR_WINDOW) didn't require that.
+
+ Note that to go into TCP_REPAIR mode, you need to run as root, under sudo, or (preferably) with the NET_ADMIN capability set.
+
+ Compile with
+   gcc -o tcpwin tcpwin.c
+ Set capability with
+   sudo setcap cap_net_admin=+ep tcpwin
+ Run with
+   ./tcpwin -l 2000
+ as server side, and
+   ./tcpwin localhost 2000
+ as client side. Use any port you want, and run them on localhost or across a real network as you please.
+
+ ******/
+
 int noreadserver(int sockfd, int port);
 int client(int sockfd, int port, char * server);
-
-int repair_on(int sockfd);
-
-
 #define REPAIR_ON 1
 #define REPAIR_OFF 0
-int repair(int sockfd, int aux) {
-	int r = setsockopt(sockfd, IPPROTO_TCP, TCP_REPAIR, &aux, sizeof( aux ));
-	if (r < 0 ) {
-		char * state;
-		if (aux == REPAIR_ON)
-			state = "setsockopts TCP_REPAIR on ";
-		else
-			state = "setsockopts TCP_REPAIR off";
-		perror(state);
-	}
-	return r;
-}
+int repair(int sockfd, int st);
 
 int main(int argc, char ** argv) {
 	struct tcp_repair_window trw;
@@ -106,6 +111,7 @@ int noreadserver(int lsock, int port) {
 	struct timespec tim, rem;
 	int donothing = 1;
 	printf("Doing nothing\n");
+	int last = 0;
 	while(1) {
 		repair(csock,REPAIR_ON);
 		getsockopt(csock, IPPROTO_TCP, TCP_REPAIR_WINDOW, &trw, &trwsize);
@@ -121,6 +127,11 @@ int noreadserver(int lsock, int port) {
 			}
 		} else {
 			int r = recv(csock, mesgbuf, buflen, 0);
+			if (last >= 65536 && trw.rcv_wnd == last) { // if same twice in a row, we've worked off the backlog
+				donothing = 1;
+				printf("Caught up. Not gonna do anything anymore\n");
+			}
+			last = trw.rcv_wnd;
 			if (r>0) {
 				printf("%s\n", mesgbuf);
 			} else {
@@ -171,5 +182,17 @@ int client(int sockfd, int port, char * server) {
 		tim.tv_nsec = 100000000L;
 		nanosleep(&tim, &rem);
 	}
+}
+int repair(int sockfd, int st) {
+	int r = setsockopt(sockfd, IPPROTO_TCP, TCP_REPAIR, &st, sizeof( st ));
+	if (r < 0 ) {
+		char * state;
+		if (st == REPAIR_ON)
+			state = "setsockopts TCP_REPAIR on ";
+		else
+			state = "setsockopts TCP_REPAIR off";
+		perror(state);
+	}
+	return r;
 }
 
