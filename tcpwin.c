@@ -55,11 +55,9 @@ int main(int argc, char ** argv) {
 	}
 
 	for (int i = 1; i < argc; i++) {
-		printf("%s\n", argv[i]);
 		if (strcmp("-R", argv[i]) == 0) {
 			use_repair = 1;
 		} else if (strcmp("-l", argv[i]) == 0) {
-			printf("	wank\n");
 			do_server = 1;
 		} else {
 			if (do_server || server) {
