@@ -9,66 +9,76 @@
 #include <netdb.h>
 
 /******
- This is sample code for usint TCP_REPAIR_WINOW socket option to peak at the send and receive TCP window sizes of a socket.
+ This is sample code for displaying the send and receive TCP window sizes of a socket. In client mode, it connect to the given port and sends ~1000 byte
+ messages infinitely, while printing the send and receive TCP window sizes. In server mode, it waits for a connetion to the given port, then does 
+ nothing except wait or the receive TCP window size to go to zero. When it does, it will start reading from the socket until the receive window size gets
+ suitably large (according to a janky heurstic) then it will once again stop reading from the socket until the receive window size goes to zero, repeat
+ ad infinitum.
 
- TCP_REPAIR_WINDOW can not be used to peak at the state of a socket's TCP Send and Receive windows 
- without the socket first being put into TCP_REPAIR mode. But then if you do anything to the socket with respect 
- to TCP, the TCP protocol engine doesn't get involved, so you need to take it out of TCP_REPAIR mode after getting the
- window states. I wish getsockopt(TCP_REPAIR_WINDOW) didn't require that.
-
- Can't find a lot of documentation on TCP_REPAIR_WINDOW socket option. Can only find a bit about TCP_REPAIR socket option.
-
- https://criu.org/TCP_connection talks about TCP_REPAIR, as does https://lwn.net/Articles/495304/ . The former link suggests you can't 
-    leave TCP_REPAIR turned on for a socket that you intend to keep using, because it actually shuts off the TCP protocol.
-
- https://stackoverflow.com/questions/54070889/how-to-get-the-tcp-window-size-of-a-socket-in-linux/54071393#54071393 suggests using 
-    TCP_REPAIR_WINDOW to get the window sizes, but doesn't mention needing to turn on TCP_REPAIR first (except in a comment I just left).
-
- https://github.com/YutaroHayakawa/libtcprepair is a little standalone library that does TCP socket freeze/thaw aka checkpoint/restore. 
-    This doesn't help us easily get the window sizes, but I just think it's neat.
-
- The stack overflow link talks about a TCP_INFO socket option. I should probably make a version of this code that uses that instead.
-
- Note that to go into TCP_REPAIR mode, you need to run as root, under sudo, or (preferably) with the NET_ADMIN capability set.
+ It can use either of two methods, but both of them only works on Linux. The two methods are the TCP_INFO socket option, and the TCP_REPAIR_WINDOW 
+ socket option. There does not seem to be a difference in the results between the two methods, but the TCP_REPAIR_WINDOW socket option requires 
+ NET_ADMIN capability (or run as root), while TCP_INFO does not. So that is the default and recommended method.
 
  Compile with
    gcc -o tcpwin tcpwin.c
- Set capability with
-   sudo setcap cap_net_admin=+ep tcpwin
  Run with
    ./tcpwin -l 2000
  as server side, and
    ./tcpwin localhost 2000
  as client side. Use any port you want, and run them on localhost or across a real network as you please.
 
+ Use the -R flag to cause this software to use TCP_REPAIR_WINDOW instead of TCP_INFO. That requires elevanted privleges, so run under
+ sudo, or better yet grant the program the NET_ADMIN capability (only need to do once):
+
+   sudo setcap cap_net_admin=+ep tcpwin
+
  ******/
 
 int noreadserver(int sockfd, int port);
 int client(int sockfd, int port, char * server);
-#define REPAIR_ON 1
-#define REPAIR_OFF 0
-int repair(int sockfd, int st);
+int gettcpwin_info(int sockfd, int * snd_wnd, int * rcv_wnd);
+int gettcpwin_repair(int sockfd, int * snd_wnd, int * rcv_wnd);
+void usage(char * cmdname);
+
+
+int use_repair = 0;
 
 int main(int argc, char ** argv) {
-	struct tcp_repair_window trw;
-	socklen_t trwsize = sizeof(trw);
-
-
-	int sockfd, port;
-	char * server;
+	int sockfd, port, porti;
+	char * server = 0;
+	int snd_wnd, rcv_wnd;
+	int do_server = 0;
 
 	if (argc <= 2) {
-		fprintf(stderr, "Usage: %s <server iP or hostname> <port> # for client\n", argv[0]);
-		fprintf(stderr, "    or %s -l <port> # for non-reading server\n", argv[0]);
+		usage(argv[0]);
 		exit(1);
 	}
 
+	for (int i = 1; i < argc; i++) {
+		printf("%s\n", argv[i]);
+		if (strcmp("-R", argv[i]) == 0) {
+			use_repair = 1;
+		} else if (strcmp("-l", argv[i]) == 0) {
+			printf("	wank\n");
+			do_server = 1;
+		} else {
+			if (do_server || server) {
+				porti = i;
+				port   = atoi(argv[i]);
+			} else
+				server = argv[i];
+		}
+	}
 
-	server = argv[1];
-	port   = atoi(argv[2]);
+	if (!server && !do_server) {
+		fprintf(stderr,"Need to provide either server name or -l flag\n");
+		usage(argv[0]);
+		exit(2);
+	}
 
 	if ( port <= 0 ) {
-		fprintf(stderr,"invalid port given %s\n",argv[2]);
+		fprintf(stderr,"invalid port given %s\n",argv[porti]);
+		usage(argv[0]);
 		exit(2);
 	}
 
@@ -77,24 +87,26 @@ int main(int argc, char ** argv) {
 		exit(3);
 	}
 
-	repair(sockfd,REPAIR_ON);
-	// from https://stackoverflow.com/a/54071393
-	int r = getsockopt(sockfd, IPPROTO_TCP, TCP_REPAIR_WINDOW, &trw, &trwsize);
-	repair(sockfd,REPAIR_OFF);
+	int r;
+	if (use_repair)
+		r = gettcpwin_repair(sockfd, &snd_wnd, &rcv_wnd);
+	else
+		r = gettcpwin_info(sockfd, &snd_wnd, &rcv_wnd);
+	printf("preconnect: sndwnd %i rcvwnd %i return %i\n",snd_wnd,rcv_wnd,r);
 
-	if ( r < 0 ) perror("getsockopts TCP_REPAIR_WINDOW");
-	printf("preconnect: sndwnd %i rcvwnd %i return %i\n",trw.snd_wnd,trw.rcv_wnd,r);
-
-	if (strcmp("-l", server) == 0)
+	if (do_server)
 		noreadserver(sockfd, port);
 	else
 		client(sockfd, port, server);
 }
 
+void usage(char * cmdname) {
+	fprintf(stderr, "Usage: %s [-R] <server iP or hostname> <port> # for client\n", cmdname);
+	fprintf(stderr, "    or %s [-R] -l <port> # for non-reading server\n", cmdname);
+}
+
 int noreadserver(int lsock, int port) {
 	char * listen_addr = "0.0.0.0";
-	struct tcp_repair_window trw;
-	socklen_t trwsize = sizeof(trw);
 	int buflen = 1010;
 	int cnt;
 	char mesgbuf[buflen];
@@ -121,51 +133,50 @@ int noreadserver(int lsock, int port) {
 		perror("accept");
 		exit(8);
 	}
+	printf("Got a new connection from client %s.\n",inet_ntoa(caddr.sin_addr));
 
 	/* ok, now, do nothing */
 	struct timespec tim, rem;
 	int donothing = 1;
 	printf("Doing nothing\n");
 	int last = 0;
+	int snd_wnd, rcv_wnd;
+	int red = 0;
 	while(1) {
-		repair(csock,REPAIR_ON);
-		getsockopt(csock, IPPROTO_TCP, TCP_REPAIR_WINDOW, &trw, &trwsize);
-		repair(csock,REPAIR_OFF);
-		printf("interval: sndwnd %i rcvwnd %i\n",trw.snd_wnd,trw.rcv_wnd);
+		if (use_repair)
+			gettcpwin_repair(csock, &snd_wnd, &rcv_wnd);
+		else
+			gettcpwin_info(csock, &snd_wnd, &rcv_wnd);
+		printf("receiving: sndwnd %i rcvwnd %i recvbytes %i (%s)\n",snd_wnd,rcv_wnd,red, (use_repair?"repair":"info"));
 		if (donothing) {
+			red = 0;
 			tim.tv_sec = 0;
 			tim.tv_nsec = 500000000L;
 			nanosleep(&tim, &rem);
-			if (trw.rcv_wnd == 0) {
+			if (rcv_wnd == 0) {
 				donothing = 0;
 				printf("OK, I'll do something now\n");
 			}
 		} else {
-			int r = recv(csock, mesgbuf, buflen, 0);
-			if (last >= 65536 && trw.rcv_wnd == last) { // if same twice in a row, we've worked off the backlog
+			red = recv(csock, mesgbuf, buflen, 0);
+			//printf("%s\n", mesgbuf);
+			if (last >= 65536 && rcv_wnd == last) { // if same twice in a row, we've worked off the backlog
 				donothing = 1;
 				printf("Caught up. Not gonna do anything anymore\n");
 			}
-			last = trw.rcv_wnd;
-			if (r>0) {
-				printf("%s\n", mesgbuf);
-			} else {
-				perror("recv");
-			}
+			last = rcv_wnd;
 		}
 	}
 }
 
 int client(int sockfd, int port, char * server) {
-	struct tcp_repair_window trw;
-	socklen_t trwsize = sizeof(trw);
-
 	struct hostent *host;
 	struct sockaddr_in srv_addr;
 	struct timespec tim, rem;
 	int buflen = 1010;
 	int cnt;
 	char mesgbuf[buflen];
+	int snd_wnd, rcv_wnd;
 
 	if ((host=gethostbyname(server)) == NULL) {  // get the host info 
 		fprintf(stderr,"gethostbyname fail\n");
@@ -189,20 +200,45 @@ int client(int sockfd, int port, char * server) {
 		int l = snprintf(mesgbuf, buflen,"MESSAGE %i ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ\r\n",cnt);
 		cnt+=1;
 		int s = send(sockfd, mesgbuf, l, 0);
-		repair(sockfd,REPAIR_ON);
-		getsockopt(sockfd, IPPROTO_TCP, TCP_REPAIR_WINDOW, &trw, &trwsize);
-		repair(sockfd,REPAIR_OFF);
-		printf("interval: sndwnd %i rcvwnd %i sentbytes %i\n",trw.snd_wnd,trw.rcv_wnd, s);
+		if (use_repair)
+			gettcpwin_repair(sockfd, &snd_wnd, &rcv_wnd);
+		else
+			gettcpwin_info(sockfd, &snd_wnd, &rcv_wnd);
+		printf("sending: sndwnd %i rcvwnd %i sentbytes %i (%s)\n",snd_wnd,rcv_wnd, s, (use_repair?"repair":"info"));
 		tim.tv_sec = 0;
 		tim.tv_nsec = 100000000L;
 		nanosleep(&tim, &rem);
 	}
 }
-int repair(int sockfd, int st) {
+
+/***
+ This uses using TCP_INFO socket option to peak at the send and receive window sizes of a socket. This is better than using TCP_REPAIR_WINDOW, 
+ because that requires "turning off" TCP protocol in order to peak at the window sizes, which requires NET_ADMIN capability, and also means 
+ for a split second, packets could be lost.
+
+ Idea from https://stackoverflow.com/questions/54070889/how-to-get-the-tcp-window-size-of-a-socket-in-linux/54071393#54071393 
+ Documentation at http://linuxgazette.net/136/pfeiffer.html and https://github.com/torvalds/linux/blob/master/include/uapi/linux/tcp.h
+ ***/
+
+int gettcpwin_info(int sockfd, int * snd_wnd, int * rcv_wnd) {
+	// from https://stackoverflow.com/a/54071393
+	struct tcp_info ti;
+	socklen_t tisize = sizeof(ti);
+	int r = getsockopt(sockfd, IPPROTO_TCP, TCP_INFO, &ti, &tisize);
+	if ( r < 0 ) perror("getsockopts TCP_INFO");
+	if (snd_wnd != NULL) *snd_wnd = ti.tcpi_snd_wnd;
+	if (rcv_wnd != NULL) *rcv_wnd = ti.tcpi_rcv_wnd;
+	return r;
+}
+
+
+#define _REPAIR_ON 1
+#define _REPAIR_OFF 0
+int _repair(int sockfd, int st) {
 	int r = setsockopt(sockfd, IPPROTO_TCP, TCP_REPAIR, &st, sizeof( st ));
 	if (r < 0 ) {
 		char * state;
-		if (st == REPAIR_ON)
+		if (st == _REPAIR_ON)
 			state = "setsockopts TCP_REPAIR on ";
 		else
 			state = "setsockopts TCP_REPAIR off";
@@ -210,4 +246,33 @@ int repair(int sockfd, int st) {
 	}
 	return r;
 }
+/***
+ TCP_REPAIR_WINDOW can not be used to peak at the state of a socket's TCP Send and Receive windows 
+ without the socket first being put into TCP_REPAIR mode. But that turns the TCP Protocol engine off, 
+ so you need to take it out of TCP_REPAIR mode after getting the window states, otherwise your socket is broken. 
+ While TCP_REPAIR mode is on, there may be a change that packets get lost. 
 
+ Can't find a lot of documentation on TCP_REPAIR_WINDOW socket option. Can only find a bit about TCP_REPAIR socket option.
+
+ https://criu.org/TCP_connection talks about TCP_REPAIR, as does https://lwn.net/Articles/495304/ . The former link suggests you can't 
+    leave TCP_REPAIR turned on for a socket that you intend to keep using, because it actually shuts off the TCP protocol.
+
+ https://stackoverflow.com/questions/54070889/how-to-get-the-tcp-window-size-of-a-socket-in-linux/54071393#54071393 suggests using 
+    TCP_REPAIR_WINDOW to get the window sizes, but doesn't mention needing to turn on TCP_REPAIR first (except in a comment I just left).
+
+ https://github.com/YutaroHayakawa/libtcprepair is a little standalone library that does TCP socket freeze/thaw aka checkpoint/restore. 
+    This doesn't help us easily get the window sizes, but I just think it's neat.
+ ***/
+
+int gettcpwin_repair(int sockfd, int * snd_wnd, int * rcv_wnd) {
+	// from https://stackoverflow.com/a/54071393
+	struct tcp_repair_window trw;
+	socklen_t trwsize = sizeof(trw);
+	_repair(sockfd,_REPAIR_ON);
+	int r = getsockopt(sockfd, IPPROTO_TCP, TCP_REPAIR_WINDOW, &trw, &trwsize);
+	_repair(sockfd,_REPAIR_OFF);
+	if ( r < 0 ) perror("getsockopts TCP_REPAIR_WINDOW");
+	if (snd_wnd != NULL) *snd_wnd = trw.snd_wnd;
+	if (rcv_wnd != NULL) *rcv_wnd = trw.rcv_wnd;
+	return r;
+}
