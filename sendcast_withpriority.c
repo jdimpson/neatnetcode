@@ -87,7 +87,7 @@ int main(int argc, char **argv) {
 		free(message);
 		exit(7);
 	}
-	fprintf(stderr,"%zu bytes allocated, line is %i bytes: %s",size, strlen(message), message);
+	fprintf(stderr,"%zu bytes allocated, line is %zu bytes: %s",size, strlen(message), message);
 
 	ret = sendto(sock_fd, message, strlen(message), 0, (const struct sockaddr *)&s, sizeof(s));
 	if (ret < 0) {
