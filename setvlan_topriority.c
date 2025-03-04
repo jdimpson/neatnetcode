@@ -14,7 +14,7 @@
 
 /*
  * Create VLAN subinterface with 
- *	ip link add link IF name SUBIF type lan id ID
+ *	ip link add link IF name SUBIF type vlan id ID
  */
 
 /* 
