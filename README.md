@@ -15,7 +15,7 @@ When run *without* the `-R` option, `tcpwin` uses `TCP_INFO` socket option to ob
 
 `sendbcast_withpriority.c` is an experiment to see how application level code can control what VLAN tag (i.e what VLID and what PCP values) the resulting packets will be tagged with, without relying on arbitrary IP address assignment and IP routing tricks, or iptables packet marking rules.
 
-This code directly sets the Linux sk_priority value for frames associated with a broadcast socket using SO_PRIORITY. Then it binds the socket to a selected ethernet device using SO_BINDTODEVICE 
+This code directly sets the Linux sk_priority value for frames associated with a broadcast socket using SO_PRIORITY. Then it binds the socket to a selected ethernet device using SO_BINDTODEVICE. If the device you use is a VLAN subinterface, then the packets will be tagged. 
 
 ultimately it seems that the host still needs static creation of subinterfaces for every desired VLAN ID, but no additional IP addresses. then application code can bind to the desired subinterface to determine what VLID each flow of packet (sockets) gets. The Linux SK priority indirectly controls what the PCP value is. so again an admin will use tc or some other tool to statically set a skprio to pcp mapping, then application code can control the skprio for each socket.
 

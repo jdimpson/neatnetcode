@@ -22,14 +22,15 @@
  value for frames associated with a broadcast 
  socket using SO_PRIORITY Then it sets destination 
  IP to INADDR_BROADCAST, then binds the socket to a 
- selected ethernet device using SO_BINDTODEVICE 
- This results in a UDP frame exiting the ethernet 
- device destinted to 255.255.255.255. I'm using 
- INADDR_BROADCAST so I don't have to write code to 
- figure out the subnet broadcast address. But it 
- won't work dependably on multi- homed interfaces 
- (depending on which network/source address you 
- want to use).
+ selected ethernet device using SO_BINDTODEVICE. If 
+ the device you use is a VLAN subinterface, then 
+ the packets will be tagged. This results in a UDP 
+ frame exiting the ethernet device destinted to 
+ 255.255.255.255. I'm using INADDR_BROADCAST so I 
+ don't have to write code to figure out the subnet 
+ broadcast address. But it won't work dependably on 
+ multi- homed interfaces (depending on which 
+ network/source address you want to use).
 
  Note that using SO_PRIORITY is different than 
  setting IP_TOS, although it is similar. (Check 
@@ -43,7 +44,7 @@
  "up". You do not need to assign an IP address to 
  the subinterface; it will then use the parent 
  interface's IP address as the source on outgoing 
- packets, and will attache the VLAN tag.
+ packets, and will attach the VLAN tag.
 
  ultimately it seems that the host still needs 
  static creation of subinterfaces for every desired 
