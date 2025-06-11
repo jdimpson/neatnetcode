@@ -9,17 +9,55 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-/*
- * This code sets directly sets the Linux sk_priority value for frames associated with a broadcast socket
- * This code sends to INADDR_BROADCAST, then binds the socket to an ethernet device with SO_BINDTODEVICE
- * This results in a frame exiting the ethernet device destinted to 255.255.255.255. This is primarily so I
- * don't have to write code to figure out the subnet broadcast address. But it won't work dependably on multi-
- * homed interfaces (depending on which network/source address you want to use). 
- *
- *
- * note that if you configure a subinterface, ensure it's in state "up", but do not assign an IP address,
- * it seems to use the parent interface's IP address, but still attaches the VLAN tag. Unlikely to work
- * the same on receive.
+/* 
+
+ This code is an experiment to see how application 
+ level code can control what VLAN tag (i.e what 
+ VLID and what PCPvalues) the resulting packets 
+ will be tagged with, without relying on arbitrary 
+ IP address assignment and IP routing tricks, or 
+ iptables packet marking rules.
+
+ This code directly sets the Linux sk_priority 
+ value for frames associated with a broadcast 
+ socket Then it sets destination IP to 
+ INADDR_BROADCAST, then binds the socket to a 
+ selected ethernet device using SO_BINDTODEVICE 
+ This results in a frame exiting the ethernet 
+ device destinted to 255.255.255.255. I'm using 
+ INADDR_BROADCAST so I don't have to write code to 
+ figure out the subnet broadcast address. But it 
+ won't work dependably on multi- homed interfaces 
+ (depending on which network/source address you 
+ want to use).
+ 
+ in order to see the result of setting the Linux 
+ sk_priority, the interface you bind the socket to 
+ should be a VLAN-tagged subinterface. Note that if 
+ you configure a subinterface, ensure it's in state 
+ "up". You do not need to assign an IP address to 
+ the subinterface; it will then use the parent 
+ interface's IP address as the source on outgoing 
+ packets, and will attache the VLAN tag.
+
+ ultimately it seems that the host still needs 
+ static creation of subinterfaces for every desired 
+ VLAN ID, but no IP addresses. then application 
+ code can bind to the desired subinterface to 
+ determine what VLID each flow of packet (sockets) 
+ gets the Linux SK priority indirectly controls 
+ what the PCP value is. so again an admin will use 
+ tc or some other tool to set a skprio to pcp 
+ mapping, then application code xan xontrol the 
+ skprio.
+
+ the code setvlan_topriority.c is an example of how 
+ to map skprios to pcp values, although i think you 
+ can also use the tc or ip programs.
+
+ next i need to figure out the receive version of this 
+ code. 
+
  */
 
 int main(int argc, char **argv) {
