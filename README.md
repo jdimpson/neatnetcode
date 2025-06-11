@@ -13,4 +13,12 @@ When run *without* the `-R` option, `tcpwin` uses `TCP_INFO` socket option to ob
 
 `setvlan_topriority.c` is code that will create a mapping between a Linux sk_priority value and an 802.1Q VLAN Priority Code Point. This can already be done with the `tc`, `vconfig`, and `ip` commands, but is here for reference. It needs to be run as root or have appropriate capability.
 
-`sendbcast_withpriority.c` is example code of sending a UDP broadcast that uses SO_PRIORITY to cause the Linux kernel to set an `sk_priority` value to all packets in sent to the socket. Use this in place of messy `iptables` or `netfilter` commands, especially if you want application code to be in charge. Note this is different than seting IP_TOS, although it is similar. (Check [this analysis](https://www.rationali.st/blog/looking-into-dscp-and-ieee-8021p-vlan-priorities.html) out to understand how.) If you use this code with `setvlan_topriority.c` on a VLAN subinterface, you can see the VLAN PCP values be set. This code also has an example of using SO_BINDTODEVICE for sending broadcast packets, rather than using a network-specific broadcast address and relying on the routing table to send to the correct ethernet interface.
+`sendbcast_withpriority.c` is an experiment to see how application level code can control what VLAN tag (i.e what VLID and what PCPvalues) the resulting packets will be tagged with, without relying on arbitrary IP address assignment and IP routing tricks, or iptables packet marking rules.
+
+This code directly sets the Linux sk_priority value for frames associated with a broadcast socket using SO_PRIORITY Then then binds the socket to a selected ethernet device using SO_BINDTODEVICE 
+
+ultimately it seems that the host still needs static creation of subinterfaces for every desired VLAN ID, but no additional IP addresses. then application code can bind to the desired subinterface to determine what VLID each flow of packet (sockets) gets. The Linux SK priority indirectly controls what the PCP value is. so again an admin will use tc or some other tool to statically set a skprio to pcp mapping, then application code can control the skprio for each socket.
+
+Note that using SO_PRIORITY is different than setting IP_TOS, although it is similar. (Check [this analysis](https://www.rationali.st/blog/looking-into-dscp-and-ieee-8021p-vlan-priorities.html) out to understand how.) 
+
+

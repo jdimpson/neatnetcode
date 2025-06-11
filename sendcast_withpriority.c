@@ -20,16 +20,21 @@
 
  This code directly sets the Linux sk_priority 
  value for frames associated with a broadcast 
- socket Then it sets destination IP to 
- INADDR_BROADCAST, then binds the socket to a 
+ socket using SO_PRIORITY Then it sets destination 
+ IP to INADDR_BROADCAST, then binds the socket to a 
  selected ethernet device using SO_BINDTODEVICE 
- This results in a frame exiting the ethernet 
+ This results in a UDP frame exiting the ethernet 
  device destinted to 255.255.255.255. I'm using 
  INADDR_BROADCAST so I don't have to write code to 
  figure out the subnet broadcast address. But it 
  won't work dependably on multi- homed interfaces 
  (depending on which network/source address you 
  want to use).
+
+ Note that using SO_PRIORITY is different than 
+ setting IP_TOS, although it is similar. (Check 
+ [this analysis](https://www.rationali.st/blog/looking-into-dscp-and-ieee-8021p-vlan-priorities.html) 
+ out to understand how.)
  
  in order to see the result of setting the Linux 
  sk_priority, the interface you bind the socket to 
@@ -42,14 +47,15 @@
 
  ultimately it seems that the host still needs 
  static creation of subinterfaces for every desired 
- VLAN ID, but no IP addresses. then application 
- code can bind to the desired subinterface to 
- determine what VLID each flow of packet (sockets) 
- gets the Linux SK priority indirectly controls 
- what the PCP value is. so again an admin will use 
- tc or some other tool to set a skprio to pcp 
- mapping, then application code xan xontrol the 
- skprio.
+ VLAN ID, but no additional IP addresses. then 
+ application code can bind to the desired 
+ subinterface to determine what VLID each flow of 
+ packet (sockets) gets. The Linux SK priority 
+ indirectly controls what the PCP value is. so 
+ again an admin will use tc or some other tool to 
+ statically set a skprio to pcp mapping, then 
+ application code can control the skprio for each 
+ socket.
 
  the code setvlan_topriority.c is an example of how 
  to map skprios to pcp values, although i think you 
