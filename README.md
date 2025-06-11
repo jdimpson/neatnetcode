@@ -13,9 +13,9 @@ When run *without* the `-R` option, `tcpwin` uses `TCP_INFO` socket option to ob
 
 `setvlan_topriority.c` is code that will create a mapping between a Linux sk_priority value and an 802.1Q VLAN Priority Code Point. This can already be done with the `tc`, `vconfig`, and `ip` commands, but is here for reference. It needs to be run as root or have appropriate capability.
 
-`sendbcast_withpriority.c` is an experiment to see how application level code can control what VLAN tag (i.e what VLID and what PCPvalues) the resulting packets will be tagged with, without relying on arbitrary IP address assignment and IP routing tricks, or iptables packet marking rules.
+`sendbcast_withpriority.c` is an experiment to see how application level code can control what VLAN tag (i.e what VLID and what PCP values) the resulting packets will be tagged with, without relying on arbitrary IP address assignment and IP routing tricks, or iptables packet marking rules.
 
-This code directly sets the Linux sk_priority value for frames associated with a broadcast socket using SO_PRIORITY Then then binds the socket to a selected ethernet device using SO_BINDTODEVICE 
+This code directly sets the Linux sk_priority value for frames associated with a broadcast socket using SO_PRIORITY. Then it binds the socket to a selected ethernet device using SO_BINDTODEVICE 
 
 ultimately it seems that the host still needs static creation of subinterfaces for every desired VLAN ID, but no additional IP addresses. then application code can bind to the desired subinterface to determine what VLID each flow of packet (sockets) gets. The Linux SK priority indirectly controls what the PCP value is. so again an admin will use tc or some other tool to statically set a skprio to pcp mapping, then application code can control the skprio for each socket.
 
