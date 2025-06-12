@@ -18,6 +18,11 @@
  IP address assignment and IP routing tricks, or 
  iptables packet marking rules.
 
+ You do need to configure a mapping from sk_priority 
+ to PCP value. Something like this, to start:
+
+ ip link  set <vl subif> type vlan egress 1:1 2:2 3:3 4:4 5:5 6:6 7:7
+
  This code directly sets the Linux sk_priority 
  value for frames associated with a broadcast 
  socket using SO_PRIORITY Then it sets destination 
@@ -60,7 +65,8 @@
 
  the code setvlan_topriority.c is an example of how 
  to map skprios to pcp values, although i think you 
- can also use the tc or ip programs.
+ use the "ip link set" command above, unless like me
+ you are curious how to do it programatically.
 
  next i need to figure out the receive version of this 
  code. 
